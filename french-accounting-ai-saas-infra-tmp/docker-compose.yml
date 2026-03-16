@@ -26,15 +26,15 @@ services:
       test: ["CMD-SHELL", "pg_isready -h localhost -U dou_user -d dou_expense_audit"]
       interval: 5s
       timeout: 10s
-      retries: 18
-      start_period: 60s
+      retries: 24
+      start_period: 90s
     networks:
       - dou-network
     restart: unless-stopped
 
   auth:
     build:
-      context: ../backend
+      context: ../french-ai-accounting-saas-backend-tmp
       dockerfile: Dockerfile.slim
     image: dou-auth:local
     container_name: dou-auth
@@ -56,7 +56,7 @@ services:
 
   file-service:
     build:
-      context: ../backend
+      context: ../french-ai-accounting-saas-backend-tmp
       dockerfile: Dockerfile.slim
     image: dou-file-service:local
     container_name: dou-file-service
@@ -69,8 +69,9 @@ services:
       ENCRYPTION_ENABLED: "false"
       MESSAGE_QUEUE_PROVIDER: ""
       LLM_PROVIDER: gemini
-      GEMINI_API_KEY: ""
-      GEMINI_MODEL: models/gemini-2.0-flash
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-models/gemini-2.0-flash}
+      OCR_PROVIDER: ${OCR_PROVIDER:-paddle}
     ports:
       - "8005:8000"
     volumes:
@@ -89,7 +90,7 @@ services:
 
   expense:
     build:
-      context: ../backend
+      context: ../french-ai-accounting-saas-backend-tmp
       dockerfile: Dockerfile.slim
     image: dou-expense:local
     container_name: dou-expense
@@ -107,7 +108,7 @@ services:
 
   report-service:
     build:
-      context: ../backend
+      context: ../french-ai-accounting-saas-backend-tmp
       dockerfile: Dockerfile.slim
     image: dou-report-service:local
     container_name: dou-report-service
@@ -131,7 +132,7 @@ services:
 
   admin:
     build:
-      context: ../backend
+      context: ../french-ai-accounting-saas-backend-tmp
       dockerfile: Dockerfile.slim
     image: dou-admin:local
     container_name: dou-admin

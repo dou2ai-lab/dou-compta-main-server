@@ -59,3 +59,6 @@ sepaxml==2.7.0
 # Performance & Caching
 redis==5.0.1
 aiohttp==3.9.1
+
+# Optional: PaddleOCR (image + PDF). Set OCR_PROVIDER=paddle to use.
+# pip install paddlepaddle paddleocr pdf2image opencv-python-headless pillow pymupdf

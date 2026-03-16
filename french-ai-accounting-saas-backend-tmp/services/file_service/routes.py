@@ -272,6 +272,41 @@ async def upload_receipt(
             detail=f"Upload failed: {type(e).__name__}: {str(e)}"
         )
 
+
+@router.post("/receipts/extract")
+async def extract_receipt_data(
+    file: UploadFile = File(...),
+    language: Optional[str] = Query("fr", description="Receipt language for extraction"),
+    user=Depends(get_current_user),
+):
+    """
+    Full pipeline: upload file → OCR → document classification → field extraction.
+    Returns document_type (invoice|receipt|bank_statement|payslip|other), ocr_text,
+    supplier, invoice_number, invoice_date, vat_amount, total_amount, currency, etc.
+    """
+    try:
+        file_content = await file.read()
+        if not file_content or len(file_content) == 0:
+            raise HTTPException(status_code=400, detail="Empty file")
+        mime_type = file.content_type or "image/jpeg"
+        from services.llm_service.invoice_pipeline import run_invoice_pipeline
+        result = await run_invoice_pipeline(
+            file_content=file_content,
+            mime_type=mime_type,
+            tenant_id=str(getattr(user, "tenant_id", "dev")),
+            language=language or "fr",
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("extract_pipeline_failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Extraction failed: {type(e).__name__}: {str(e)}",
+        )
+
+
 @router.get("/receipts/{receipt_id}", response_model=ReceiptUploadResponse)
 async def get_receipt(
     receipt_id: str,

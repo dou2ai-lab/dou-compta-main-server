@@ -1,5 +1,27 @@
+# Environment / secrets (keep examples only)
 .env
+.env.local
+.env.*.local
 *.env
 !.env.example
 !.env.auth-local.example
+
+# Logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker / local overrides (optional: uncomment if you don't commit overrides)
+# docker-compose.override.yml
+# docker-compose.*.local.yml
 

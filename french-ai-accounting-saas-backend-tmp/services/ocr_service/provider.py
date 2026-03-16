@@ -110,25 +110,42 @@ class AzureFormRecognizerProvider(OCRProvider):
         }
 
 def get_ocr_provider() -> OCRProvider:
-    """Factory function to get OCR provider"""
-    if settings.OCR_PROVIDER == "tesseract":
-        # Tesseract may be missing on Windows dev machines. If initialization fails,
-        # fall back to the base provider (placeholder structured output).
+    """Factory function to get OCR provider. Supports tesseract, paddle/paddleocr, google_document_ai, azure_form_recognizer."""
+    p = (settings.OCR_PROVIDER or "").strip().lower()
+    if p == "tesseract":
         try:
             from .provider_tesseract import TesseractOCRProvider
             return TesseractOCRProvider()
         except Exception as e:
             logger.warning("tesseract_provider_init_failed_falling_back", error=str(e))
             return OCRProvider()
-    elif settings.OCR_PROVIDER == "google_document_ai":
+    if p in ("paddle", "paddleocr"):
+        try:
+            from .provider_paddle import PaddleOCRProvider
+            prov = PaddleOCRProvider()
+            if getattr(prov, "_ocr", None) is not None:
+                return prov
+            logger.warning("paddle_ocr_not_available_falling_back_to_tesseract")
+        except Exception as e:
+            logger.warning("paddle_provider_init_failed_falling_back", error=str(e))
+        try:
+            from .provider_tesseract import TesseractOCRProvider
+            return TesseractOCRProvider()
+        except Exception as e2:
+            logger.warning("tesseract_fallback_failed", error=str(e2))
+            return OCRProvider()
+    if p == "google_document_ai":
         return GoogleDocumentAIProvider()
-    elif settings.OCR_PROVIDER == "azure_form_recognizer":
+    if p == "azure_form_recognizer":
         return AzureFormRecognizerProvider()
-    else:
-        # Default to Tesseract for free OCR
-        logger.warning("unknown_ocr_provider", provider=settings.OCR_PROVIDER, defaulting_to="tesseract")
+    # Default to Tesseract
+    logger.warning("unknown_ocr_provider", provider=settings.OCR_PROVIDER, defaulting_to="tesseract")
+    try:
         from .provider_tesseract import TesseractOCRProvider
         return TesseractOCRProvider()
+    except Exception as e:
+        logger.warning("tesseract_provider_init_failed_falling_back", error=str(e))
+        return OCRProvider()
 
 
 

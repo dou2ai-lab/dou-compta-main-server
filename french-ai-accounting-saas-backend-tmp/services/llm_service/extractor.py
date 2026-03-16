@@ -211,6 +211,40 @@ If a field cannot be extracted, use null. Be precise with dates and amounts."""
             response = response.strip()
             
             data = json.loads(response)
+
+            def _normalize_amount(value) -> Optional[str]:
+                """French-style 136,50 -> 136.50 for Decimal parsing."""
+                if value is None:
+                    return None
+                s = str(value).strip().replace(" ", "").replace("\u00a0", "")
+                if "," in s and "." in s:
+                    s = s.replace(",", "")
+                elif "," in s:
+                    parts = s.rsplit(",", 1)
+                    if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) <= 2:
+                        s = parts[0].replace(",", "").replace(" ", "") + "." + parts[1]
+                    else:
+                        s = s.replace(",", "")
+                return s if s else None
+
+            def _fix_misparsed_french_decimal(amount: Optional[Decimal], is_total: bool) -> Optional[Decimal]:
+                """Correct LLM returning 3201 instead of 32.01 (comma dropped)."""
+                if amount is None:
+                    return None
+                try:
+                    n = float(amount)
+                except (TypeError, ValueError):
+                    return amount
+                if n < 100:
+                    return amount
+                if n != int(n):
+                    return amount
+                candidate = Decimal(str(round(n / 100, 2)))
+                if is_total and Decimal("0.01") <= candidate <= Decimal("999999.99"):
+                    return candidate
+                if not is_total and Decimal("0") <= candidate <= Decimal("9999.99"):
+                    return candidate
+                return amount
             
             # Parse date
             expense_date = None
@@ -220,27 +254,37 @@ If a field cannot be extracted, use null. Be precise with dates and amounts."""
                 except (ValueError, TypeError):
                     pass
             
-            # Parse amounts
+            # Parse amounts (normalize French comma decimal)
             total_amount = None
             if data.get("total_amount") is not None:
                 try:
-                    total_amount = Decimal(str(data["total_amount"]))
+                    norm = _normalize_amount(data["total_amount"])
+                    if norm:
+                        total_amount = Decimal(norm)
                 except (ValueError, TypeError):
                     pass
             
             vat_amount = None
             if data.get("vat_amount") is not None:
                 try:
-                    vat_amount = Decimal(str(data["vat_amount"]))
+                    norm = _normalize_amount(data["vat_amount"])
+                    if norm:
+                        vat_amount = Decimal(norm)
                 except (ValueError, TypeError):
                     pass
             
             vat_rate = None
             if data.get("vat_rate") is not None:
                 try:
-                    vat_rate = Decimal(str(data["vat_rate"]))
+                    norm = _normalize_amount(data["vat_rate"])
+                    if norm:
+                        vat_rate = Decimal(norm)
                 except (ValueError, TypeError):
                     pass
+
+            # Fix LLM misparsing French decimals (e.g. 3201 -> 32.01, 291 -> 2.91)
+            total_amount = _fix_misparsed_french_decimal(total_amount, is_total=True)
+            vat_amount = _fix_misparsed_french_decimal(vat_amount, is_total=False)
             
             return ReceiptExtractionResponse(
                 receipt_id=receipt_id,

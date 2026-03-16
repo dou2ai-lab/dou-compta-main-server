@@ -21,12 +21,12 @@ from typing import List, Tuple, Optional
 
 import asyncpg
 
-# Load .env file if it exists
+# Load .env file if it exists (override=False so Docker-passed DATABASE_URL is kept)
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     try:
         from dotenv import load_dotenv
-        load_dotenv(env_path, override=True)
+        load_dotenv(env_path, override=False)
         print(f"[OK] Loaded .env from: {env_path}")
     except ImportError:
         # python-dotenv not installed, manually parse .env file
@@ -46,19 +46,13 @@ if env_path.exists():
 DEFAULT_DB_URL = "postgresql+asyncpg://dou_user:dou_password123@localhost:5433/dou_expense_audit"
 DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_DB_URL)
 # Debug: show what URL we're using (mask password)
-if DATABASE_URL != DEFAULT_DB_URL:
-    url_parts = DATABASE_URL.split('@')
-    if len(url_parts) > 0 and ':' in url_parts[0]:
-        user_part = url_parts[0].split('//')[-1] if '//' in url_parts[0] else url_parts[0]
-        if ':' in user_part:
-            user = user_part.split(':')[0]
-            print(f"[INFO] Using DATABASE_URL from environment (user: {user})")
-        else:
-            print(f"[INFO] Using DATABASE_URL from environment")
-    else:
-        print(f"[INFO] Using DATABASE_URL from environment")
+url_parts = DATABASE_URL.split("@")
+if len(url_parts) > 0 and ":" in url_parts[0]:
+    user_part = url_parts[0].split("//")[-1] if "//" in url_parts[0] else url_parts[0]
+    user = user_part.split(":")[0]
+    print(f"[INFO] Using DATABASE_URL from environment (user: {user})")
 else:
-    print(f"[WARN] Using DEFAULT_DB_URL (environment variable not set)")
+    print(f"[INFO] Using DATABASE_URL from environment")
 
 
 def _to_asyncpg_url(url: str) -> str:
@@ -163,24 +157,16 @@ async def run_all_migrations(selected: Optional[List[str]] = None) -> None:
     db_url = _to_asyncpg_url(DATABASE_URL)
     parsed = urllib.parse.urlparse(db_url)
     
-    # Extract password - handle URL encoding
+    # Extract password - handle URL encoding. Do NOT override it; trust env/URL.
     password = parsed.password
     if password:
-        password = urllib.parse.unquote(password)  # Decode URL-encoded password
-        password = password.strip()  # Remove any whitespace
-    
-    # Use correct default password that matches docker-compose
-    if not password:
-        password = "dou_password123"
-    
-    # TEMPORARY FIX: Force correct password (matches docker-compose.yml)
-    # TODO: Debug why parsed.password doesn't match
-    if parsed.port == 5433 and parsed.hostname in ("localhost", "127.0.0.1"):
-        password = "dou_password123"
-        print(f"[WARN] Using hardcoded password for local dev")
+        password = urllib.parse.unquote(password).strip()
     
     print(f"[INFO] Connecting to: {parsed.hostname}:{parsed.port}, user: {parsed.username}, database: {parsed.path[1:] if parsed.path else 'N/A'}")
-    print(f"[INFO] Password: {'*' * len(password)} (length: {len(password)}, first 3: '{password[:3]}', last 3: '{password[-3:]}')")
+    if password:
+        print(f"[INFO] Password: {'*' * len(password)}")
+    else:
+        print("[INFO] No password in URL, relying on trust/local auth")
 
     conn = await asyncpg.connect(
         host=parsed.hostname or "localhost",

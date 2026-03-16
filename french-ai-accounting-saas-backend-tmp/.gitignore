@@ -9,7 +9,7 @@ venv/
 env/
 .env/
 
-# Environment / secrets (keep examples)
+# Environment / secrets (keep examples only)
 .env
 .env.*
 !.env.example
@@ -46,4 +46,15 @@ Thumbs.db
 # Local data / uploads
 uploads/
 tmp/
+/tmp/
+*.sqlite3
+*.db
+
+# Python / pip
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+celerybeat-schedule
+celerybeat.pid
 

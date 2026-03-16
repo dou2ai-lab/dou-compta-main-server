@@ -102,15 +102,25 @@ async def run_receipt_pipeline(
                     await db.commit()
                     return
 
-            # Step 2: OCR
+            # Step 2: OCR (convert PDF to image first so Tesseract/Paddle get image bytes)
             try:
                 from services.ocr_service.provider import get_ocr_provider
                 from services.ocr_service.normalizer import DataNormalizer
 
+                mime_type = file_metadata.get("mime_type") or "image/png"
+                ocr_input = file_content
+                ocr_mime = mime_type
+                if mime_type == "application/pdf":
+                    try:
+                        from services.ocr_service.worker import _pdf_to_first_image_bytes
+                        ocr_input = _pdf_to_first_image_bytes(file_content)
+                        ocr_mime = "image/png"
+                    except Exception as pdf_err:
+                        logger.warning("receipt_pipeline_pdf_to_image_failed", receipt_id=receipt_id, error=str(pdf_err))
+
                 provider = get_ocr_provider()
                 normalizer = DataNormalizer()
-                mime_type = file_metadata.get("mime_type") or "image/png"
-                ocr_result = await provider.extract(file_content, mime_type)
+                ocr_result = await provider.extract(ocr_input, ocr_mime)
                 _log_pipeline_step("ocr_ok", receipt_id, extra={
                     "has_text": bool(ocr_result.get("text") or ocr_result.get("ocr_text")),
                     "text_len": len(ocr_result.get("text") or ocr_result.get("ocr_text") or ""),

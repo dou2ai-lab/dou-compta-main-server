@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     # Default matches docker-compose.yml (host port 5433, password dou_password123)
     DATABASE_URL: str = Field(default="postgresql://dou_user:dou_password123@localhost:5433/dou_expense_audit")
     
-    # OCR Provider
-    OCR_PROVIDER: str = "tesseract"  # tesseract, google_document_ai, azure_form_recognizer
+    # OCR Provider (paddle | tesseract | google_document_ai | azure_form_recognizer)
+    OCR_PROVIDER: str = "paddle"
     GOOGLE_PROJECT_ID: str = ""
     GOOGLE_LOCATION: str = "eu"  # EU region required
     GOOGLE_PROCESSOR_ID: str = ""
