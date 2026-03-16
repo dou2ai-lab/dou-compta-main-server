@@ -1,0 +1,48 @@
+# Database only - use standard image (no build). Use this when you want DB in Docker only.
+# Usage: docker compose -f docker-compose.db-only.yml up -d
+# From repo root: docker compose -f infrastructure/docker-compose.db-only.yml up -d
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg14
+    container_name: dou-postgres
+    environment:
+      POSTGRES_USER: dou_user
+      POSTGRES_PASSWORD: dou_password123
+      POSTGRES_DB: dou_expense_audit
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-extensions.sql:/docker-entrypoint-initdb.d/10-extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U dou_user -d dou_expense_audit"]
+      interval: 5s
+      timeout: 10s
+      retries: 18
+      start_period: 60s
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  # Web UI to access PostgreSQL from the browser (optional)
+  adminer:
+    image: adminer:latest
+    container_name: dou-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    networks:
+      - dou-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  dou-network:
+    driver: bridge

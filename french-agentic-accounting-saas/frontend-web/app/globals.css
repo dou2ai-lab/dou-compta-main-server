@@ -1,0 +1,153 @@
+/* -----------------------------------------------------------------------------
+   File: globals.css
+   Company: Euron (A Subsidiary of EngageSphere Technology Private Limited)
+   Created On: 21-11-2025
+   Description: Global CSS styles and resets for the application
+   ----------------------------------------------------------------------------- */
+
+/* CRITICAL CSS - Must be first to prevent FOUC */
+/* Hide content until fonts and styles are loaded */
+html:not(.fonts-loaded) {
+  visibility: hidden;
+}
+
+html.fonts-loaded {
+  visibility: visible;
+}
+
+/* Critical reset - prevents flash */
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* Ensure body has initial styles before React hydration */
+body {
+  color: #111827;
+  background: #F9FAFB;
+  font-family: var(--font-inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Hide scrollbar */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Badge count styles */
+.badge-count {
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Gradient brand */
+.gradient-brand {
+  background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%);
+}
+
+/* Feature card */
+.feature-card {
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Floating animation */
+.floating-animation {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+/* Pulse dot */
+.pulse-dot {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Password toggle */
+.password-toggle {
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.password-toggle:hover {
+  color: #4F46E5;
+}
+
+/* Upload zone */
+.upload-zone {
+  transition: all 0.3s ease;
+}
+
+.upload-zone:hover {
+  border-color: #818CF8;
+  background-color: #EEF2FF;
+}
+
+.upload-zone.dragging {
+  border-color: #4F46E5;
+  background-color: #E0E7FF;
+}
+
+/* Confidence bar */
+.confidence-bar {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* SLA dot */
+.sla-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.sla-yellow {
+  background-color: #F59E0B;
+}
+
+.sla-red {
+  background-color: #EF4444;
+  animation: pulse 2s infinite;
+}
+
+
+
+
+
+
+
+
+

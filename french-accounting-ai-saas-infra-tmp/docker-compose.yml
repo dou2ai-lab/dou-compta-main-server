@@ -1,0 +1,156 @@
+# -----------------------------------------------------------------------------
+# File: docker-compose.yml
+# Company: Euron (A Subsidiary of EngageSphere Technology Private Limited)
+# Created On: 21-11-2025
+# Description: Docker Compose configuration for local development environment
+# Postgres + Auth in Docker (connects via container network - avoids Windows host auth issues)
+# Frontend runs locally: cd frontend-web && npm run dev
+# -----------------------------------------------------------------------------
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    image: dou-postgres:local
+    container_name: dou-postgres
+    environment:
+      POSTGRES_USER: dou_user
+      POSTGRES_PASSWORD: dou_password123
+      POSTGRES_DB: dou_expense_audit
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h localhost -U dou_user -d dou_expense_audit"]
+      interval: 5s
+      timeout: 10s
+      retries: 18
+      start_period: 60s
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  auth:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-auth:local
+    container_name: dou-auth
+    command: ["uvicorn", "services.auth.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file:
+      # Local-only, gitignored file for secrets like OAuth client secrets.
+      # See docs/SETUP_FOR_TEAMMATES.md (SSO section).
+      - .env.auth-local
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+
+  file-service:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-file-service:local
+    container_name: dou-file-service
+    command: ["uvicorn", "services.file_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_PATH: /tmp/dou-receipts
+      ENCRYPTION_ENABLED: "false"
+      MESSAGE_QUEUE_PROVIDER: ""
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ""
+      GEMINI_MODEL: models/gemini-2.0-flash
+    ports:
+      - "8005:8000"
+    volumes:
+      - file_storage:/tmp/dou-receipts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  expense:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-expense:local
+    container_name: dou-expense
+    command: ["uvicorn", "services.expense.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+
+  report-service:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-report-service:local
+    container_name: dou-report-service
+    command: ["uvicorn", "services.report_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+    ports:
+      - "8009:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  admin:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-admin:local
+    container_name: dou-admin
+    command: ["uvicorn", "services.admin.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+    ports:
+      - "8003:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+
+volumes:
+  postgres_data:
+  file_storage:
+
+networks:
+  dou-network:
+    driver: bridge

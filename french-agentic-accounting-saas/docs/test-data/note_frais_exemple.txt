@@ -1,0 +1,25 @@
+NOTE DE FRAIS - Mars 2026
+
+Employe: Jean DUPONT
+Service: Developpement
+Periode: 01/03/2026 - 31/03/2026
+
+DATE        NATURE                  LIEU            MONTANT   TVA
+-----------------------------------------------------------------
+03/03/2026  Repas client           Paris 8e         45,50     10%
+05/03/2026  Taxi aeroport CDG      Paris-CDG        62,00     10%
+07/03/2026  Hotel 2 nuits          Lyon             285,00    10%
+10/03/2026  Fournitures bureau     Papeterie        32,80     20%
+12/03/2026  Restaurant equipe      Paris 2e         78,50     10%
+15/03/2026  Train Paris-Lyon AR    SNCF             112,00    10%
+18/03/2026  Parking aeroport       CDG P4           45,00     20%
+22/03/2026  Repas midi             Boulangerie      12,50     5,5%
+25/03/2026  Carte telephonique     SFR              15,00     20%
+28/03/2026  Frais postaux          La Poste          8,70     20%
+-----------------------------------------------------------------
+                                   TOTAL:          697,00
+
+Remboursement demande: 697,00 EUR
+Approuve par: Marie MARTIN, Manager
+
+Pieces justificatives jointes: 10 recus

@@ -1,0 +1,88 @@
+# Backend services (use with main docker-compose: docker-compose -f docker-compose.yml -f docker-compose.backend.yml up -d)
+# Requires: postgres from docker-compose.yml
+
+services:
+  auth:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: auth-service
+    container_name: dou-auth
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  expense:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: expense-service
+    container_name: dou-expense
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  admin:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: admin-service
+    container_name: dou-admin
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+    ports:
+      - "8003:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  audit:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+      target: audit-service
+    container_name: dou-audit
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+    ports:
+      - "8004:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  # RAG service for Audit Co-Pilot (mirrors main docker-compose.yml but without profiles)
+  rag:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.rag-slim
+    container_name: dou-rag
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+    ports:
+      - "8018:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+    restart: unless-stopped

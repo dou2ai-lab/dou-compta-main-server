@@ -1,0 +1,31 @@
+FACTURE N° FAC-2026-TEST-001
+
+Emetteur:
+DouCompta SAS
+12 Rue de la Paix
+75002 Paris
+SIREN: 912 345 678
+N° TVA: FR 12 912345678
+
+Destinataire:
+Client Alpha SAS
+45 Avenue des Champs-Elysees
+75008 Paris
+SIREN: 111 222 333
+
+Date d'emission: 15/03/2026
+Date d'echeance: 14/04/2026
+
+Designation                          Qte    PU HT      Total HT
+--------------------------------------------------------------
+Abonnement DouCompta Pro - Mars     1      79,00      79,00
+Formation utilisateur (2h)          2      150,00     300,00
+Support technique premium           1      50,00      50,00
+--------------------------------------------------------------
+                            Total HT:                 429,00
+                            TVA 20%:                   85,80
+                            Total TTC:                514,80
+
+Conditions de paiement: 30 jours fin de mois
+IBAN: FR76 3000 4000 0312 3456 7890 143
+BIC: BNPAFRPP

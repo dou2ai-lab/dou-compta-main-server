@@ -1,0 +1,31 @@
+# Default owners for everything in the repo
+* @dou-expense-audit-ai/team
+
+# Backend
+/backend/ @dou-expense-audit-ai/backend-team
+
+# Frontend Web
+/frontend-web/ @dou-expense-audit-ai/frontend-team
+
+# Frontend Mobile
+/frontend-mobile/ @dou-expense-audit-ai/mobile-team
+
+# Infrastructure
+/infrastructure/ @dou-expense-audit-ai/devops-team
+
+# Documentation
+/docs/ @dou-expense-audit-ai/product-team
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,44 @@
+BULLETIN DE PAIE - Mars 2026
+
+Employeur: DouCompta SAS - 12 Rue de la Paix, 75002 Paris
+SIRET: 912 345 678 00010
+Convention collective: SYNTEC
+
+Salarie: Jean DUPONT
+Emploi: Developpeur Senior
+N° Securite Sociale: 1 85 03 75 108 042 68
+
+Periode: du 01/03/2026 au 31/03/2026
+
+DESIGNATION                      BASE     TAUX     MONTANT
+-----------------------------------------------------------
+Salaire de base                  151,67h  25,00    3791,75
+Prime d'anciennete                                  189,59
+
+SALAIRE BRUT                                       3981,34
+
+Cotisations salariales:
+  Securite sociale maladie        3981,34   0,40%    15,93
+  Securite sociale vieillesse     3981,34   6,90%   274,71
+  CSG deductible                  3981,34   6,80%   270,73
+  CSG non deductible              3981,34   2,40%    95,55
+  CRDS                            3981,34   0,50%    19,91
+  Retraite complementaire         3981,34   3,15%   125,41
+  Assurance chomage               3981,34   0,86%    34,24
+  Prevoyance                      3981,34   0,50%    19,91
+
+Total cotisations salariales                        856,39
+
+NET A PAYER                                        3124,95
+
+Cotisations patronales:
+  Securite sociale                3981,34  13,00%   517,57
+  Retraite complementaire        3981,34   4,72%   187,92
+  Assurance chomage               3981,34   4,05%   161,24
+  Formation professionnelle       3981,34   1,00%    39,81
+  Taxe d'apprentissage            3981,34   0,68%    27,07
+
+Total cotisations patronales                        933,61
+
+Mode de paiement: Virement bancaire
+Date de paiement: 28/03/2026

@@ -1,0 +1,63 @@
+"""
+Accounting Service - Main application entry point.
+"""
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+import structlog
+import traceback
+
+from common.database import get_db
+from .routes import router
+
+logger = structlog.get_logger()
+
+app = FastAPI(
+    title="DouCompta - Accounting Service",
+    description="Automatic accounting engine with PCG 2025 compliance",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000","http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("unhandled_error", path=str(request.url), error=str(exc))
+    traceback.print_exc()
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+app.include_router(router, prefix="/api/v1/accounting", tags=["accounting"])
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "accounting"}
+
+
+@app.get("/health/ready")
+async def readiness_check():
+    try:
+        async for db in get_db():
+            await db.execute(text("SELECT 1"))
+            break
+        return {"status": "ready", "service": "accounting"}
+    except Exception as e:
+        logger.error("readiness_check_failed", error=str(e))
+        return {"status": "not_ready", "service": "accounting", "error": str(e)}
+
+
+@app.get("/health/live")
+async def liveness_check():
+    return {"status": "alive", "service": "accounting"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8019)

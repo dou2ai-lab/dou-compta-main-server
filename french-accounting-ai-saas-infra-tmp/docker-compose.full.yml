@@ -1,0 +1,216 @@
+# -----------------------------------------------------------------------------
+# Full stack: API services + Redis, RabbitMQ, MinIO + workers.
+# Heavy processing (OCR, extraction, export, anomaly) runs in workers, not in API.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.full.yml up -d
+# Or: docker compose -f docker-compose.full.yml up -d (includes base services)
+# -----------------------------------------------------------------------------
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg14
+    container_name: dou-postgres
+    environment:
+      POSTGRES_USER: dou_user
+      POSTGRES_PASSWORD: dou_password123
+      POSTGRES_DB: dou_expense_audit
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-extensions.sql:/docker-entrypoint-initdb.d/10-extensions.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dou_user -d dou_expense_audit"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: dou-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - dou-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: dou-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - dou-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  minio:
+    image: minio/minio:latest
+    container_name: dou-minio
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - dou-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  auth:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-auth:local
+    container_name: dou-auth
+    command: ["uvicorn", "services.auth.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+
+  file-service:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-file-service:local
+    container_name: dou-file-service
+    command: ["uvicorn", "services.file_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_PATH: /tmp/dou-receipts
+      ENCRYPTION_ENABLED: "false"
+      MESSAGE_QUEUE_PROVIDER: rabbitmq
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "8005:8000"
+    volumes:
+      - file_storage:/tmp/dou-receipts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - dou-network
+
+  expense:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-expense:local
+    container_name: dou-expense
+    command: ["uvicorn", "services.expense.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      JWT_SECRET: 9f3b6c7e8a1d2f4c6b8e0a3d5f7c9e1b2d4a6c8e0f3b5d7a9c1e2f4a6b8c0d2
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dou-network
+
+  # OCR + extraction worker: consumes receipt.uploaded, runs full pipeline (OCR -> LLM extract -> draft expense)
+  ocr-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-workers:local
+    container_name: dou-ocr-worker
+    command: ["python", "-m", "workers.receipt_worker"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      MESSAGE_QUEUE_PROVIDER: rabbitmq
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      STORAGE_PROVIDER: local
+      LOCAL_STORAGE_PATH: /tmp/dou-receipts
+    env_file:
+      - ../backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+  # Export worker: consumes report.export, generates CSV/Excel
+  export-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.slim
+    image: dou-workers:local
+    container_name: dou-export-worker
+    command: ["python", "-m", "workers.export_worker"]
+    environment:
+      DATABASE_URL: postgresql://dou_user:dou_password123@postgres:5432/dou_expense_audit
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - dou-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  file_storage:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
+
+networks:
+  dou-network:
+    driver: bridge

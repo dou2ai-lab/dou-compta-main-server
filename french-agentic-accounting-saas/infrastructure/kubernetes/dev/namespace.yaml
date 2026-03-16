@@ -1,0 +1,20 @@
+# -----------------------------------------------------------------------------
+# File: namespace.yaml
+# Company: Euron (A Subsidiary of EngageSphere Technology Private Limited)
+# Created On: 21-11-2025
+# Description: Kubernetes namespace definition for development environment
+# -----------------------------------------------------------------------------
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+  labels:
+    name: dev
+    environment: development
+
+
+
+
+
+

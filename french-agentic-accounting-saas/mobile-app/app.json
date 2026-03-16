@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "DouCompta",
+    "slug": "doucompta-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "doucompta",
+    "splash": {
+      "backgroundColor": "#4F46E5"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.doucompta.mobile"
+    },
+    "android": {
+      "package": "com.doucompta.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#4F46E5"
+      }
+    }
+  }
+}

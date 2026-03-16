@@ -1,0 +1,19 @@
+# Prometheus config for Dou Expense & Audit AI
+# Scrape File Service and Monitoring Service metrics for Grafana
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'file-service'
+    static_configs:
+      - targets: ['host.docker.internal:8005']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: 'monitoring-service'
+    static_configs:
+      - targets: ['host.docker.internal:8015']
+    metrics_path: /metrics
+    scrape_interval: 30s

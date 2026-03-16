@@ -1,0 +1,110 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+
+jobs:
+  deploy-dev:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev')
+    environment:
+      name: development
+      url: https://dev.dou-expense-audit-ai.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_DEV }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Deploy to Kubernetes
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl set image deployment/backend backend=${{ secrets.CONTAINER_REGISTRY }}/dou-expense-audit-ai/backend:${{ github.sha }} -n dev
+          kubectl set image deployment/frontend-web frontend-web=${{ secrets.CONTAINER_REGISTRY }}/dou-expense-audit-ai/frontend-web:${{ github.sha }} -n dev
+          kubectl rollout status deployment/backend -n dev
+          kubectl rollout status deployment/frontend-web -n dev
+
+  deploy-qa:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'qa')
+    environment:
+      name: qa
+      url: https://qa.dou-expense-audit-ai.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_QA }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Deploy to Kubernetes
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl set image deployment/backend backend=${{ secrets.CONTAINER_REGISTRY }}/dou-expense-audit-ai/backend:${{ github.sha }} -n qa
+          kubectl set image deployment/frontend-web frontend-web=${{ secrets.CONTAINER_REGISTRY }}/dou-expense-audit-ai/frontend-web:${{ github.sha }} -n qa
+          kubectl rollout status deployment/backend -n qa
+          kubectl rollout status deployment/frontend-web -n qa
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    environment:
+      name: production
+      url: https://dou-expense-audit-ai.com
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_PROD }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+
+      - name: Deploy to Kubernetes
+        run: |
+          export KUBECONFIG=kubeconfig
+          kubectl set image deployment/backend backend=${{ secrets.CONTAINER_REGISTRY }}/dou-expense-audit-ai/backend:${{ github.sha }} -n prod
+          kubectl set image deployment/frontend-web frontend-web=${{ secrets.CONTAINER_REGISTRY }}/dou-expense-audit-ai/frontend-web:${{ github.sha }} -n prod
+          kubectl rollout status deployment/backend -n prod
+          kubectl rollout status deployment/frontend-web -n prod
+
+
+
+
+
+
+
+
+
+
+
+
+
+

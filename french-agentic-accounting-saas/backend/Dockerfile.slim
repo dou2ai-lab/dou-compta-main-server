@@ -1,0 +1,34 @@
+# Lightweight image for Auth, Expense, Admin, Audit (no PyTorch - builds in ~2 min)
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y gcc libpq-dev tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-slim.txt .
+RUN pip install --no-cache-dir -r requirements-slim.txt
+
+COPY create_tables.py .
+COPY scripts/ ./scripts/
+COPY common/ ./common/
+COPY services/auth/ ./services/auth/
+COPY services/expense/ ./services/expense/
+COPY services/admin/ ./services/admin/
+COPY services/audit/ ./services/audit/
+COPY services/report_service/ ./services/report_service/
+COPY services/file_service/ ./services/file_service/
+COPY services/llm_service/ ./services/llm_service/
+COPY services/policy_service/ ./services/policy_service/
+COPY services/ocr_service/ ./services/ocr_service/
+COPY services/accounting_service/ ./services/accounting_service/
+COPY services/dossier_service/ ./services/dossier_service/
+COPY services/notification_service/ ./services/notification_service/
+COPY services/banking_service/ ./services/banking_service/
+COPY services/tax_service/ ./services/tax_service/
+COPY services/analysis_service/ ./services/analysis_service/
+COPY services/einvoice_service/ ./services/einvoice_service/
+COPY services/payroll_service/ ./services/payroll_service/
+COPY services/collection_service/ ./services/collection_service/
+COPY services/agents_service/ ./services/agents_service/
+
+ENV PYTHONPATH=/app
