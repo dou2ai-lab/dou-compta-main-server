@@ -21,6 +21,7 @@ from common.database import get_db
 from common.models import Expense, User, UserRole, Role
 from common.roles import has_admin_role, can_approve_expense
 from services.auth.dependencies import get_current_user
+from services.security.rbac import require_approval_access
 from services.policy_service.service import PolicyService
 from .models import (
     ExpenseCreate, ExpenseUpdate, ExpenseResponse,
@@ -385,16 +386,37 @@ async def list_pending_approvals(
 ):
     """List expenses pending approval by current user (as manager)"""
     try:
-        # Build query for pending approvals for this tenant.
-        # NOTE: For the current implementation we intentionally show
-        # **all** expenses in this tenant that are pending approval,
-        # instead of restricting to direct reports or admin-only.
-        query = select(Expense).where(
-            Expense.tenant_id == current_user.tenant_id,
-            Expense.deleted_at.is_(None),
-            Expense.status == "submitted",
-            Expense.approval_status == "pending"
+        user_roles_result = await db.execute(
+            select(Role.name).join(UserRole).where(UserRole.user_id == current_user.id)
         )
+        user_roles = list(user_roles_result.scalars().all())
+
+        # Approvers (admin/approver/finance) can view all pending approvals.
+        can_view_all_pending = can_approve_expense(user_roles)
+
+        if can_view_all_pending:
+            query = select(Expense).where(
+                Expense.tenant_id == current_user.tenant_id,
+                Expense.deleted_at.is_(None),
+                Expense.status == "submitted",
+                Expense.approval_status == "pending",
+            )
+        else:
+            # Managers can view pending approvals for direct reports only.
+            manager_submitter_ids = (
+                select(User.id).where(
+                    User.tenant_id == current_user.tenant_id,
+                    User.deleted_at.is_(None),
+                    User.manager_id == current_user.id,
+                )
+            )
+            query = select(Expense).where(
+                Expense.tenant_id == current_user.tenant_id,
+                Expense.deleted_at.is_(None),
+                Expense.status == "submitted",
+                Expense.approval_status == "pending",
+                Expense.submitted_by.in_(manager_submitter_ids),
+            )
         
         # Get total count
         count_query = select(func.count()).select_from(query.subquery())
@@ -528,7 +550,7 @@ async def get_expense(
             if not is_manager and not is_admin:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Access denied"
+                    detail="Not authorized"
                 )
         
         # Get linked receipt IDs
@@ -609,7 +631,7 @@ async def get_expense_duplicates(
         if not expense:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense not found")
         if expense.submitted_by != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
         # Find others from same user, same amount, same date; optional same merchant
         from sqlalchemy import and_
@@ -674,7 +696,7 @@ async def suggest_expense_category(
         if not expense:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense not found")
         if expense.submitted_by != current_user.id:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
         # Rule-based suggestion from merchant/description
         merchant = (expense.merchant_name or "").lower()
@@ -748,7 +770,7 @@ async def update_expense(
         if expense.submitted_by != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                detail="Not authorized"
             )
         
         if expense.status not in ["draft", "submitted"]:
@@ -864,7 +886,7 @@ async def delete_expense(
         if expense.submitted_by != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                detail="Not authorized"
             )
         
         # Soft delete
@@ -919,7 +941,7 @@ async def submit_expense(
         if expense.submitted_by != current_user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                detail="Not authorized"
             )
         
         if expense.status != "draft":
@@ -1137,28 +1159,14 @@ async def approve_expense(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Expense not found"
             )
-        
-        # Check if user is the manager/approver
-        submitter_result = await db.execute(
-            select(User).where(User.id == expense.submitted_by)
-        )
-        submitter = submitter_result.scalar_one_or_none()
-        
-        is_manager = submitter and submitter.manager_id == current_user.id
 
-        user_roles_result = await db.execute(
-            select(Role.name).join(UserRole).where(
-                UserRole.user_id == current_user.id
-            )
+        await require_approval_access(
+            current_user,
+            db,
+            expense.submitted_by,
+            endpoint="approve_expense",
+            allow_owner=False,
         )
-        user_roles = list(user_roles_result.scalars().all())
-        can_approve = is_manager or can_approve_expense(user_roles)
-
-        if not can_approve:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the expense submitter's manager or a user with Approver/Finance/Admin role can approve this expense"
-            )
 
         if expense.approval_status != "pending":
             raise HTTPException(
@@ -1262,28 +1270,14 @@ async def reject_expense(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Expense not found"
             )
-        
-        # Check if user is the manager/approver
-        submitter_result = await db.execute(
-            select(User).where(User.id == expense.submitted_by)
-        )
-        submitter = submitter_result.scalar_one_or_none()
-        
-        is_manager = submitter and submitter.manager_id == current_user.id
 
-        user_roles_result = await db.execute(
-            select(Role.name).join(UserRole).where(
-                UserRole.user_id == current_user.id
-            )
+        await require_approval_access(
+            current_user,
+            db,
+            expense.submitted_by,
+            endpoint="reject_expense",
+            allow_owner=False,
         )
-        user_roles = list(user_roles_result.scalars().all())
-        can_approve = is_manager or can_approve_expense(user_roles)
-
-        if not can_approve:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the expense submitter's manager or a user with Approver/Finance/Admin role can reject this expense"
-            )
 
         if expense.approval_status != "pending":
             raise HTTPException(

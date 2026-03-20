@@ -63,7 +63,7 @@ async def evaluate_expense_policies(
             # TODO: Check if user has admin/approver role
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
+                detail="Not authorized"
             )
         
         # Get user roles

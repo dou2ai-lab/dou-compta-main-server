@@ -29,6 +29,12 @@ def has_admin_role(role_names: list) -> bool:
     return any(r and str(r).lower() == ROLE_ADMIN for r in role_names)
 
 
+# Canonical RBAC helpers (requested names)
+def is_admin(user_roles: list) -> bool:
+    """True if the user has the admin role."""
+    return has_admin_role(user_roles)
+
+
 def has_approver_role(role_names: list) -> bool:
     """True if the user has approver or admin role."""
     if not role_names:
@@ -51,3 +57,16 @@ def can_approve_expense(role_names: list) -> bool:
         return False
     lower = [str(r).lower() for r in role_names if r]
     return ROLE_ADMIN in lower or ROLE_APPROVER in lower or ROLE_FINANCE in lower
+
+
+def can_approve(user_roles: list) -> bool:
+    """True if the user can approve (admin/approver/finance)."""
+    return can_approve_expense(user_roles)
+
+
+def can_view_approvals(user_roles: list) -> bool:
+    """
+    In this system, "view approvals" is aligned with "can approve":
+    approver/finance/admin can view pending approval queues.
+    """
+    return can_approve_expense(user_roles)

@@ -9,7 +9,7 @@
 Pydantic schemas for File Service
 """
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 class ReceiptUploadResponse(BaseModel):
@@ -43,6 +43,16 @@ class ReceiptDownloadResponse(BaseModel):
 class ErrorResponse(BaseModel):
     success: bool = False
     errors: list[dict]
+
+
+class ReceiptCorrectionsRequest(BaseModel):
+    """
+    Human-in-the-loop corrections payload.
+    corrected_values is the user's final values (what they edited in UI).
+    predicted_extraction is the model's latest extraction snapshot (optional but recommended).
+    """
+    corrected_values: Dict[str, Any]
+    predicted_extraction: Optional[Dict[str, Any]] = None
 
 
 

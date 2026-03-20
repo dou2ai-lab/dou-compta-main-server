@@ -41,7 +41,7 @@ async def require_admin_permission(current_user: User, db: AsyncSession):
     if "admin:read" not in permissions and "admin:write" not in permissions:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
+            detail="Not authorized"
         )
 
 @router.get("/vat-rules", response_model=List[VatRuleResponse])
@@ -724,8 +724,33 @@ async def _log_user_activity(
             details=details or {},
         ))
         await db.flush()
+        # Audit logging should never break the caller. We commit here so the
+        # caller doesn't need a second commit that could fail if audit tables
+        # are missing/migrated incorrectly.
+        await db.commit()
+        return True
     except Exception as e:
-        logger.warning("activity_log_failed", action=action, error=str(e))
+        logger.warning(
+            "user_activity_log_failed",
+            action=action,
+            tenant_id=str(getattr(current_user, "tenant_id", None)),
+            performed_by_id=str(getattr(current_user, "id", None)),
+            target_user_id=str(target_user_id) if target_user_id else None,
+            target_role_id=str(target_role_id) if target_role_id else None,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        try:
+            await db.rollback()
+        except Exception:
+            # Nothing else we can do here; keep the original failure suppressed.
+            pass
+        try:
+            # Help ensure session is usable after a failed flush/rollback.
+            db.expire_all()
+        except Exception:
+            pass
+        return False
 
 
 @router.get("/activity")
@@ -1005,12 +1030,17 @@ async def create_user(
     await db.commit()
     await db.refresh(new_user)
 
-    await _log_user_activity(
+    logged = await _log_user_activity(
         db, current_user, "user_created",
         target_user_id=new_user.id,
         details={"email": new_user.email, "first_name": new_user.first_name, "last_name": new_user.last_name},
     )
-    await db.commit()
+    if not logged:
+        # Defensive: ensure session is usable for subsequent queries.
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     # Load roles for response
     ur_result = await db.execute(
@@ -1097,12 +1127,16 @@ async def update_user(
     await db.refresh(user)
 
     action_type = "user_status_changed" if set(user_data.keys()) <= {"status"} else "user_updated"
-    await _log_user_activity(
+    logged = await _log_user_activity(
         db, current_user, action_type,
         target_user_id=user.id,
         details={"email": user.email, "status": user.status},
     )
-    await db.commit()
+    if not logged:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     ur_result = await db.execute(
         select(RoleModel.id, RoleModel.name)
@@ -1149,11 +1183,16 @@ async def delete_user(
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
 
-    await _log_user_activity(
+    logged = await _log_user_activity(
         db, current_user, "user_deleted",
         target_user_id=user.id,
         details={"email": user.email},
     )
+    if not logged:
+        try:
+            await db.rollback()
+        except Exception:
+            pass
 
     from datetime import datetime
     user.deleted_at = datetime.utcnow()

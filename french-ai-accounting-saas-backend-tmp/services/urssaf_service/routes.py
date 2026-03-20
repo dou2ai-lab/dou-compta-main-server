@@ -47,7 +47,7 @@ async def require_admin_permission(user: User, db: AsyncSession):
     )
     role = result.scalar_one_or_none()
     if not role:
-        raise HTTPException(status_code=403, detail="Admin permission required")
+        raise HTTPException(status_code=403, detail="Not authorized")
 
 
 @router.post("/expenses/{expense_id}/evaluate", response_model=URSSAFComplianceCheckResponse)

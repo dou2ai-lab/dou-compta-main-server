@@ -71,6 +71,10 @@ class DataNormalizer:
         
         # Preserve raw OCR text for LLM processing
         normalized["text"] = ocr_data.get("text", "") or ocr_data.get("ocr_text", "")
+        normalized["raw_text"] = ocr_data.get("raw_text", "") or normalized["text"]
+        normalized["blocks"] = ocr_data.get("blocks", [])
+        normalized["lines"] = ocr_data.get("lines", []) or []
+        normalized["pages"] = ocr_data.get("pages", [])
         normalized["raw_response"] = ocr_data.get("raw_response", {})
         
         logger.info("data_normalized", receipt_id=ocr_data.get("receipt_id"))
@@ -116,10 +120,18 @@ class DataNormalizer:
             return float(amount)
         
         if isinstance(amount, str):
-            # Remove currency symbols, spaces, commas
-            cleaned = re.sub(r'[€$£,\s]', '', amount)
-            # Replace decimal comma with dot
-            cleaned = cleaned.replace(',', '.')
+            # Remove currency symbols and spaces. Keep comma/dot for decimal handling.
+            cleaned = re.sub(r'[€$£\s]', '', amount)
+            # Normalize thousand separators vs decimal commas.
+            # Examples:
+            # - "1 234,56" -> "1234.56"
+            # - "1,234.56" -> "1234.56"
+            if "," in cleaned and "." in cleaned:
+                # Assume commas are thousand separators in this case.
+                cleaned = cleaned.replace(",", "")
+            elif "," in cleaned and "." not in cleaned:
+                # Treat comma as decimal separator.
+                cleaned = cleaned.replace(",", ".")
             try:
                 return float(cleaned)
             except ValueError:
@@ -130,7 +142,15 @@ class DataNormalizer:
     
     def _normalize_currency(self, currency: str) -> str:
         """Normalize currency to EUR (Phase 2)"""
-        # Phase 2: All amounts in EUR
+        if not currency:
+            return "EUR"
+        c = str(currency).strip().upper()
+        if len(c) == 3:
+            return c
+        if "€" in c or "EUR" in c:
+            return "EUR"
+        if "$" in c or "USD" in c:
+            return "USD"
         return "EUR"
     
     def _normalize_vat_rate(self, rate) -> float:

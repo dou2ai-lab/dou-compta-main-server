@@ -10,7 +10,7 @@
 File Service Routes - Rebuilt Simple Version
 """
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from typing import Optional
 import structlog
 import uuid
@@ -20,11 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import traceback
 import asyncio
 import httpx
+import os
+import json
 
 from .schemas import (
     ReceiptUploadResponse,
     ReceiptStatusResponse,
     ReceiptDownloadResponse,
+    ReceiptCorrectionsRequest,
 )
 from .models import ReceiptDocument
 from .storage import StorageService
@@ -235,7 +238,17 @@ async def upload_receipt(
                 print(f"  WARNING: OCR pipeline failed: {type(e).__name__}: {str(e)}")
 
         print("\nStep 6.6: Running OCR pipeline in-process...")
-        asyncio.create_task(_run_ocr_in_process())
+        use_queue = os.getenv("USE_QUEUE", "false").strip().lower() in ("1", "true", "yes", "on")
+        if use_queue:
+            try:
+                from .tasks import process_receipt
+                process_receipt.delay(_receipt_id, _tenant_id, _user_id, _file_meta)
+                print("  Queued background processing via Celery/Redis")
+            except Exception as e:
+                print(f"  WARNING: Queue enqueue failed, falling back to in-process task: {type(e).__name__}: {str(e)}")
+                asyncio.create_task(_run_ocr_in_process())
+        else:
+            asyncio.create_task(_run_ocr_in_process())
 
         response = ReceiptUploadResponse(
             receipt_id=receipt_id,
@@ -440,3 +453,283 @@ async def delete_receipt(
         return {"success": True, "data": None}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/receipts/{receipt_id}/corrections")
+async def submit_receipt_corrections(
+    receipt_id: str,
+    payload: ReceiptCorrectionsRequest,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Store user corrections for human-in-the-loop learning + training dataset.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.orm import attributes
+    from .models_feedback import ReceiptFieldCorrection, ReceiptTrainingSnapshot
+
+    result = await db.execute(
+        select(ReceiptDocument).where(
+            ReceiptDocument.id == uuid.UUID(receipt_id),
+            ReceiptDocument.tenant_id == user.tenant_id,
+            ReceiptDocument.deleted_at.is_(None),
+        )
+    )
+    receipt = result.scalar_one_or_none()
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+
+    meta = receipt.meta_data or {}
+    ocr_snapshot = meta.get("ocr")
+    llm_snapshot = meta.get("extraction")
+    predicted = payload.predicted_extraction or llm_snapshot
+
+    # Store per-field rows: { field, predicted_value, corrected_value }
+    corrected = payload.corrected_values or {}
+    for field_name, corrected_value in corrected.items():
+        predicted_value = predicted.get(field_name) if isinstance(predicted, dict) else None
+        row = ReceiptFieldCorrection(
+            receipt_id=receipt.id,
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            field_name=str(field_name),
+            predicted_value=predicted_value,
+            corrected_value=corrected_value,
+            predicted_snapshot=predicted if isinstance(predicted, dict) else None,
+            ocr_snapshot=ocr_snapshot if isinstance(ocr_snapshot, dict) else None,
+            llm_snapshot=llm_snapshot if isinstance(llm_snapshot, dict) else None,
+        )
+        db.add(row)
+
+    # Update receipt meta_data with corrected fields (audit trail)
+    meta.setdefault("corrections", {})
+    meta["corrections"]["corrected_values"] = corrected
+    meta["corrections"]["predicted_extraction"] = predicted if isinstance(predicted, dict) else None
+    receipt.meta_data = meta
+    attributes.flag_modified(receipt, "meta_data")
+
+    # Upsert training snapshot (latest corrected)
+    snap = ReceiptTrainingSnapshot(
+        receipt_id=receipt.id,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        file_hash=receipt.file_hash,
+        document_type=(meta.get("document_type") if isinstance(meta, dict) else None),
+        ocr_output=ocr_snapshot if isinstance(ocr_snapshot, dict) else None,
+        llm_output=llm_snapshot if isinstance(llm_snapshot, dict) else None,
+        extraction_output=llm_snapshot if isinstance(llm_snapshot, dict) else None,
+        corrected_output=corrected,
+    )
+    db.add(snap)
+
+    await db.commit()
+    return {"success": True, "data": {"receipt_id": receipt_id}}
+
+
+@router.get("/training/export")
+async def export_training_dataset(
+    format: str = Query("jsonl", description="Export format: jsonl or csv"),
+    limit: int = Query(1000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Export training dataset rows (tenant-scoped) with:
+    - OCR text
+    - LLM output
+    - corrected output
+    """
+    from sqlalchemy import select
+    from .models_feedback import ReceiptTrainingSnapshot
+
+    q = (
+        select(ReceiptTrainingSnapshot)
+        .where(ReceiptTrainingSnapshot.tenant_id == user.tenant_id)
+        .order_by(ReceiptTrainingSnapshot.created_at.desc())
+        .limit(limit)
+    )
+    res = await db.execute(q)
+    rows = res.scalars().all()
+
+    if format.lower() == "jsonl":
+        lines = []
+        for r in rows:
+            ocr = r.ocr_output or {}
+            ocr_text = None
+            if isinstance(ocr, dict):
+                ocr_text = ocr.get("raw_text") or ocr.get("text")
+            record = {
+                "receipt_id": str(r.receipt_id),
+                "document_type": r.document_type,
+                "ocr_text": ocr_text,
+                "llm_output": r.llm_output,
+                "corrected_output": r.corrected_output,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            lines.append(json.dumps(record, ensure_ascii=False))
+        body = "\n".join(lines) + ("\n" if lines else "")
+        return Response(content=body, media_type="application/jsonl")
+
+    if format.lower() == "csv":
+        import csv
+        import io
+
+        out = io.StringIO()
+        w = csv.writer(out)
+        w.writerow(["receipt_id", "document_type", "ocr_text", "llm_output_json", "corrected_output_json", "created_at"])
+        for r in rows:
+            ocr = r.ocr_output or {}
+            ocr_text = None
+            if isinstance(ocr, dict):
+                ocr_text = ocr.get("raw_text") or ocr.get("text")
+            w.writerow([
+                str(r.receipt_id),
+                r.document_type or "",
+                (ocr_text or "").replace("\r", " ").replace("\n", "\\n"),
+                json.dumps(r.llm_output or {}, ensure_ascii=False),
+                json.dumps(r.corrected_output or {}, ensure_ascii=False),
+                r.created_at.isoformat() if r.created_at else "",
+            ])
+        return Response(content=out.getvalue(), media_type="text/csv")
+
+    raise HTTPException(status_code=400, detail="Invalid format. Use jsonl or csv.")
+
+
+@router.get("/training/eval")
+async def evaluate_training_dataset(
+    limit: int = Query(1000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Compute evaluation metrics from training snapshots:
+    - field-level accuracy
+    - % correct total_amount
+    - % correct expense_date
+    """
+    from sqlalchemy import select
+    from .models_feedback import ReceiptTrainingSnapshot
+
+    res = await db.execute(
+        select(ReceiptTrainingSnapshot)
+        .where(ReceiptTrainingSnapshot.tenant_id == user.tenant_id)
+        .order_by(ReceiptTrainingSnapshot.created_at.desc())
+        .limit(limit)
+    )
+    rows = res.scalars().all()
+
+    def _norm_num(v):
+        if v is None:
+            return None
+        try:
+            return round(float(v), 2)
+        except (TypeError, ValueError):
+            return None
+
+    def _eq_num(a, b, tol=0.02):
+        na = _norm_num(a)
+        nb = _norm_num(b)
+        if na is None or nb is None:
+            return False
+        return abs(na - nb) <= tol
+
+    def _eq_str(a, b):
+        if a is None or b is None:
+            return False
+        return str(a).strip() == str(b).strip()
+
+    field_counts = {}
+    field_correct = {}
+    total_amount_correct = 0
+    total_amount_count = 0
+    expense_date_correct = 0
+    expense_date_count = 0
+
+    for r in rows:
+        pred = r.extraction_output or r.llm_output or {}
+        corr = r.corrected_output or {}
+        if not isinstance(pred, dict) or not isinstance(corr, dict):
+            continue
+
+        for field, corr_val in corr.items():
+            if corr_val is None:
+                continue
+            field_counts[field] = field_counts.get(field, 0) + 1
+            pred_val = pred.get(field)
+
+            ok = False
+            if field in ("total_amount", "vat_amount", "vat_rate", "subtotal"):
+                ok = _eq_num(pred_val, corr_val)
+            else:
+                ok = _eq_str(pred_val, corr_val)
+            if ok:
+                field_correct[field] = field_correct.get(field, 0) + 1
+
+        if "total_amount" in corr and corr.get("total_amount") is not None:
+            total_amount_count += 1
+            if _eq_num((pred or {}).get("total_amount"), corr.get("total_amount")):
+                total_amount_correct += 1
+
+        if "expense_date" in corr and corr.get("expense_date") is not None:
+            expense_date_count += 1
+            if _eq_str((pred or {}).get("expense_date"), corr.get("expense_date")):
+                expense_date_correct += 1
+
+    field_accuracy = {
+        f: (field_correct.get(f, 0) / c) if c else 0.0
+        for f, c in field_counts.items()
+    }
+
+    return {
+        "success": True,
+        "data": {
+            "sample_size": len(rows),
+            "field_accuracy": field_accuracy,
+            "total_amount_accuracy": (total_amount_correct / total_amount_count) if total_amount_count else None,
+            "expense_date_accuracy": (expense_date_correct / expense_date_count) if expense_date_count else None,
+            "counts": {
+                "total_amount": {"correct": total_amount_correct, "total": total_amount_count},
+                "expense_date": {"correct": expense_date_correct, "total": expense_date_count},
+            },
+        },
+        "error": None,
+        "meta": {},
+    }
+
+
+@router.get("/metrics")
+async def file_service_metrics(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """
+    Lightweight metrics for demo/ops visibility (tenant-scoped).
+    """
+    from sqlalchemy import func, select
+    from .models import ReceiptDocument
+    from .models_feedback import ReceiptTrainingSnapshot, ReceiptFieldCorrection
+
+    def _count(model, where):
+        return select(func.count()).select_from(model).where(where)
+
+    tenant = user.tenant_id
+    receipts_total = (await db.execute(_count(ReceiptDocument, ReceiptDocument.tenant_id == tenant))).scalar() or 0
+    receipts_completed = (await db.execute(_count(ReceiptDocument, (ReceiptDocument.tenant_id == tenant) & (ReceiptDocument.ocr_status == "completed")))).scalar() or 0
+    receipts_failed = (await db.execute(_count(ReceiptDocument, (ReceiptDocument.tenant_id == tenant) & (ReceiptDocument.ocr_status == "failed")))).scalar() or 0
+
+    snapshots_total = (await db.execute(_count(ReceiptTrainingSnapshot, ReceiptTrainingSnapshot.tenant_id == tenant))).scalar() or 0
+    corrections_total = (await db.execute(_count(ReceiptFieldCorrection, ReceiptFieldCorrection.tenant_id == tenant))).scalar() or 0
+
+    return {
+        "success": True,
+        "data": {
+            "receipts_total": receipts_total,
+            "receipts_completed": receipts_completed,
+            "receipts_failed": receipts_failed,
+            "training_snapshots_total": snapshots_total,
+            "field_corrections_total": corrections_total,
+        },
+        "error": None,
+        "meta": {},
+    }

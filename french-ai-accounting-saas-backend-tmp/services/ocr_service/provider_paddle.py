@@ -95,8 +95,10 @@ class PaddleOCRProvider(OCRProvider):
             avg_conf = (sum(all_scores) / len(all_scores)) if all_scores else 0.0
 
             return {
+                "raw_text": text,
                 "text": text,
                 "ocr_text": text,
+                "blocks": [{"text": ln, "confidence": sc} for ln, sc in zip(all_lines, all_scores)],
                 "raw_response": {"paddleocr_result": raw_results},
                 "confidence_scores": {"overall": float(avg_conf)},
                 "extraction_method": "paddleocr",

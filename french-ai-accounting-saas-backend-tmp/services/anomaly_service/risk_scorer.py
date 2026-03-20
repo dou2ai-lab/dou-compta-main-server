@@ -9,7 +9,7 @@
 Risk Score Calculator
 Calculates comprehensive risk scores for expenses based on multiple factors
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -167,7 +167,7 @@ class RiskScorer:
         else:
             return 0.0
     
-    async def _calculate_merchant_risk(self, merchant_name: str | None) -> float:
+    async def _calculate_merchant_risk(self, merchant_name: Optional[str]) -> float:
         """Calculate risk based on merchant frequency"""
         if not merchant_name:
             return 0.2  # Missing merchant name is slightly risky
@@ -195,7 +195,7 @@ class RiskScorer:
         else:
             return 0.1
     
-    async def _calculate_category_risk(self, user_id: str, category: str | None) -> float:
+    async def _calculate_category_risk(self, user_id: str, category: Optional[str]) -> float:
         """Calculate risk if category is unusual for this employee"""
         if not category:
             return 0.1

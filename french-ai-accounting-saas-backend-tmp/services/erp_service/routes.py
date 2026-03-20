@@ -40,7 +40,7 @@ async def require_erp_permission(current_user: User, db: AsyncSession):
     if "erp:write" not in permissions and "admin:write" not in permissions:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="ERP access required"
+            detail="Not authorized"
         )
 
 # Phase 25 Routes

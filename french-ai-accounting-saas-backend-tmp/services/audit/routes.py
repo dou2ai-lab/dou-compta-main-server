@@ -61,7 +61,7 @@ async def require_audit_permission(current_user: User, db: AsyncSession):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
-        detail="Audit access required"
+        detail="Not authorized"
     )
 
 

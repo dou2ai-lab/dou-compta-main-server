@@ -8,6 +8,7 @@
 """
 Authentication dependencies
 """
+import os
 import uuid
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -33,9 +34,19 @@ async def get_current_user(
 ) -> User:
     """Get current authenticated user from JWT token"""
     token = credentials.credentials
+    env = os.getenv("ENVIRONMENT", "development").lower()
     
-    # Development mode: Accept mock tokens
+    # Development mode: Accept mock tokens or bypass invalid tokens for local testing
     if token.startswith("dev_mock_token") or token == "mock_token":
+        # Never allow dev auth bypass outside development.
+        if env != "development":
+            logger.warning("dev_mock_token_rejected", token_prefix=token[:10], env=env)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         logger.info("dev_mode_auth", message="Using development mock authentication")
         try:
             # Get or create a development user
@@ -92,11 +103,60 @@ async def get_current_user(
     payload = decode_token(token)
     if not payload or payload.get("type") != "access":
         logger.warning("invalid_token", token_prefix=token[:10])
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        # In strict/production mode, reject invalid tokens
+        if env == "production":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # In development, fall back to dev mock user so local frontend works even with bad tokens
+        logger.info("dev_mode_auth_fallback", message="Using dev mock user due to invalid token in development")
+        try:
+            result = await db.execute(
+                select(User).where(User.email == "dev@dou.fr").limit(1)
+            )
+            user = result.scalar_one_or_none()
+        except (OperationalError, Exception) as e:
+            if "password" in str(e).lower() or "connection" in str(e).lower() or "connect" in str(e).lower():
+                logger.warning("dev_mock_no_db", message="DB unreachable, using mock user. Run services in Docker for full functionality.")
+                user = User(
+                    id=DEV_MOCK_USER_ID,
+                    email="dev@dou.fr",
+                    first_name="Development",
+                    last_name="User",
+                    status="active",
+                    tenant_id=DEV_MOCK_TENANT_ID,
+                )
+                user._dev_mock_no_db = True  # type: ignore
+                return user
+            raise
+
+        if not user:
+            tenant_result = await db.execute(select(Tenant).limit(1))
+            tenant = tenant_result.scalar_one_or_none()
+            if not tenant:
+                tenant = Tenant(
+                    name="Development Tenant",
+                    slug="dev-tenant",
+                    status="active",
+                )
+                db.add(tenant)
+                await db.flush()
+                logger.info("default_tenant_created", tenant_id=str(tenant.id))
+
+            user = User(
+                email="dev@dou.fr",
+                first_name="Development",
+                last_name="User",
+                status="active",
+                tenant_id=tenant.id,
+            )
+            db.add(user)
+            await db.flush()
+            logger.info("dev_user_created", user_id=str(user.id), tenant_id=str(user.tenant_id))
+
+        return user
     
     user_id = payload.get("sub")
     if not user_id:

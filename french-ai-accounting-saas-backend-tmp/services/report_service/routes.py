@@ -20,6 +20,7 @@ import io
 from common.database import get_db
 from common.models import ExpenseReport, ExpenseReportItem, Expense, User
 from services.auth.dependencies import get_current_user
+from services.security.rbac import require_approval_access
 from services.report_service.service import ExpenseReportService
 from services.report_service.models import (
     ExpenseReportCreate, ExpenseReportUpdate, ExpenseReportResponse,
@@ -194,11 +195,13 @@ async def get_report_expenses(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Expense report not found"
         )
-    if report.submitted_by != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied"
-        )
+    await require_approval_access(
+        current_user,
+        db,
+        report.submitted_by,
+        endpoint="get_report_expenses",
+        allow_owner=True,
+    )
     items_result = await db.execute(
         select(ExpenseReportItem.expense_id).where(
             ExpenseReportItem.expense_report_id == report.id
@@ -259,13 +262,13 @@ async def get_expense_report(
                 detail="Expense report not found"
             )
         
-        # Check access
-        if report.submitted_by != current_user.id:
-            # TODO: Check if user is approver or admin
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied"
-            )
+        await require_approval_access(
+            current_user,
+            db,
+            report.submitted_by,
+            endpoint="get_expense_report",
+            allow_owner=True,
+        )
         
         # Get expense IDs
         expense_items_result = await db.execute(
@@ -487,8 +490,15 @@ async def approve_expense_report(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Expense report not found"
             )
-        
-        # TODO: Check if user is approver
+
+        await require_approval_access(
+            current_user,
+            db,
+            report.submitted_by,
+            endpoint="approve_expense_report",
+            allow_owner=False,
+        )
+
         if report.approval_status != "pending":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -585,8 +595,15 @@ async def reject_expense_report(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Expense report not found"
             )
-        
-        # TODO: Check if user is approver
+
+        await require_approval_access(
+            current_user,
+            db,
+            report.submitted_by,
+            endpoint="reject_expense_report",
+            allow_owner=False,
+        )
+
         if report.approval_status != "pending":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -677,8 +694,13 @@ async def export_expense_report(
     report = result.scalar_one_or_none()
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense report not found")
-    if report.submitted_by != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    await require_approval_access(
+        current_user,
+        db,
+        report.submitted_by,
+        endpoint="export_expense_report",
+        allow_owner=True,
+    )
 
     items_result = await db.execute(
         select(ExpenseReportItem.expense_id).where(

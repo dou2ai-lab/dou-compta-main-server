@@ -9,7 +9,7 @@
 Pydantic schemas for LLM Service
 """
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from datetime import date
 from decimal import Decimal
 import structlog
@@ -28,10 +28,30 @@ class ReceiptExtractionRequest(BaseModel):
     receipt_id: str = Field(..., description="Receipt document ID")
     tenant_id: str = Field(..., description="Tenant ID")
     language: str = Field(default="fr", description="Receipt language (fr, en, etc.)")
+    document_type: Optional[str] = Field(
+        None,
+        description="Hint from pipeline: facture_achat|facture_vente|releve_bancaire|bulletin_paie|autre",
+    )
+    ocr_pages: Optional[List[str]] = Field(
+        default=None,
+        description="Optional page-level OCR texts (PAGE 1..N) for multi-page documents",
+    )
+    ocr_lines: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Optional line-level OCR structure with bbox (for deterministic label alignment).",
+    )
+    ocr_blocks: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Optional block-level OCR structure (layout hints).",
+    )
 
 class ReceiptExtractionResponse(BaseModel):
     """Extracted receipt data with validation"""
     receipt_id: str
+    document_type: Optional[str] = Field(
+        None,
+        description="One of: facture_achat, facture_vente, releve_bancaire, bulletin_paie, autre",
+    )
     merchant_name: Optional[str] = Field(None, description="Merchant/store name")
     merchant_address: Optional[str] = Field(None, description="Merchant address")
     merchant_vat_number: Optional[str] = Field(None, description="Merchant VAT/SIRET number")
@@ -46,7 +66,35 @@ class ReceiptExtractionResponse(BaseModel):
     category: Optional[str] = Field(None, description="Expense category: meals, travel, accommodation, transport, office, training")
     description: Optional[str] = Field(None, description="Summary of purchased items")
     line_items: List[Dict] = Field(default_factory=list, description="Line items: [{description, quantity, unit_price, amount, vat_rate}]")
+    others: List[str] = Field(default_factory=list, description="2–3 additional insights (IBAN, payment ref, contract ref, etc.)")
+    # Document-type specific extractions (kept optional so invoice UI stays stable)
+    bank_statement: Optional[Dict[str, Any]] = Field(
+        None,
+        description="For releve_bancaire: {opening_balance, closing_balance, transactions:[{date, description, amount, currency, type}] }",
+    )
+    payslip: Optional[Dict[str, Any]] = Field(
+        None,
+        description="For bulletin_paie: {employer_name, employee_name, period, gross_pay, net_pay, taxes}",
+    )
     confidence_scores: Dict[str, float] = Field(default_factory=dict, description="Confidence scores per field")
+    overall_confidence: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Overall extraction confidence 0.0–1.0",
+    )
+    status: Optional[str] = Field(
+        None,
+        description="One of: completed, needs_review, rejected, REQUIRES_MANUAL_VALIDATION",
+    )
+    field_sources: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Per-field extraction source: llm|ocr|regex|mixed",
+    )
+    field_reasoning: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Short per-field reasoning/evidence for auditability",
+    )
     extraction_metadata: Dict = Field(default_factory=dict, description="Additional extraction metadata")
     
     @field_validator('expense_date')

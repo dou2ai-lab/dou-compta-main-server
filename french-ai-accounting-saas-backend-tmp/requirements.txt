@@ -27,7 +27,10 @@ kafka-python==2.0.2
 
 # OCR Providers (optional for auth/login; Pillow build can fail on Windows without C++ build tools)
 pytesseract==0.3.10
-# Pillow==10.1.0
+# Required for image/PDF OCR pipeline
+Pillow==10.1.0
+pdf2image==1.17.0
+pymupdf==1.24.10
 
 # LLM Providers
 openai>=1.0.0
@@ -59,6 +62,9 @@ sepaxml==2.7.0
 # Performance & Caching
 redis==5.0.1
 aiohttp==3.9.1
+
+# Async processing (queue)
+celery==5.3.6
 
 # Optional: PaddleOCR (image + PDF). Set OCR_PROVIDER=paddle to use.
 # pip install paddlepaddle paddleocr pdf2image opencv-python-headless pillow pymupdf

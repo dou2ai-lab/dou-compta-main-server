@@ -37,7 +37,7 @@ async def require_gdpr_permission(current_user: User, db: AsyncSession):
     if "gdpr:write" not in permissions and "admin:write" not in permissions:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="GDPR access required"
+            detail="Not authorized"
         )
 
 # Phase 27 Routes

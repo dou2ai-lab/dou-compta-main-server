@@ -4,7 +4,12 @@
 # -----------------------------------------------------------------------------
 """
 Document classification for the receipt/invoice pipeline.
-Returns one of: invoice, receipt, bank_statement, payslip, other.
+
+Legacy categories (kept for backward compatibility):
+- invoice, receipt, bank_statement, payslip, other
+
+PRD categories:
+- facture_achat, facture_vente, releve_bancaire, bulletin_paie, autre
 """
 from __future__ import annotations
 
@@ -61,6 +66,40 @@ def classify_document(ocr_text: str) -> str:
 
     best = max(scores.items(), key=lambda x: x[1])
     return best[0]
+
+
+def classify_document_prd(ocr_text: str) -> str:
+    """
+    PRD classifier mapping to:
+    facture_achat | facture_vente | releve_bancaire | bulletin_paie | autre
+
+    Phase-1 heuristic:
+    - bank_statement -> releve_bancaire
+    - payslip -> bulletin_paie
+    - invoice/receipt -> default facture_achat unless we see strong "vente" signals
+    """
+    legacy = classify_document(ocr_text)
+    text = (ocr_text or "").lower()
+
+    if legacy == "bank_statement":
+        return "releve_bancaire"
+    if legacy == "payslip":
+        return "bulletin_paie"
+    if legacy in ("invoice", "receipt"):
+        # Heuristic sales invoice cues
+        vente_signals = (
+            "facture de vente",
+            "client",
+            "bill to",
+            "ship to",
+            "customer",
+            "acheteur",
+            "buyer",
+        )
+        if any(s in text for s in vente_signals):
+            return "facture_vente"
+        return "facture_achat"
+    return "autre"
 
 
 def classify_document_with_confidence(ocr_text: str) -> Tuple[str, float]:
